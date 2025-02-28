@@ -4,20 +4,19 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 
 # Configure Google Gemini API key
-genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ")
+genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
-# Function to read the PDF file
-def read_pdf(file_path):
-    """Reads the text from a PDF file."""
-    with open(file_path, 'rb') as file:
+# Function to read multiple PDFs and extract text
+def read_pdfs(files):
+    """Reads text from multiple PDF files and combines them."""
+    text = ""
+    for file in files:
         reader = PdfReader(file)
-        text = ""
-        for page_num in range(len(reader.pages)):
-            page = reader.pages[page_num]
-            text += page.extract_text()
+        for page in reader.pages:
+            text += page.extract_text() + "\n\n"  # Separate PDFs with newlines
     return text
 
-# Function to query the Gemini LLM with preloaded context (CAG)
+# Function to query the Gemini LLM with preloaded context
 def query_with_cag(context: str, query: str) -> str:
     """
     Query the Gemini LLM with preloaded context using Cache-Augmented Generation.
@@ -29,49 +28,22 @@ def query_with_cag(context: str, query: str) -> str:
 
 # Streamlit app interface
 st.title("RoboDrive - by Desu Deekshitha")
-st.header("Upload a PDF and Ask Your Query")
+st.header("Upload PDFs and Ask Your Query")
 
-# Step 1: Ask the user to upload a PDF file
-if 'uploaded_file' not in st.session_state:
-    st.session_state.uploaded_file = None
-    st.session_state.pdf_text = None
+# Step 1: Ask the user to upload multiple PDF files
+uploaded_files = st.file_uploader("Upload one or more PDFs", type="pdf", accept_multiple_files=True)
 
-uploaded_file = st.file_uploader("Please upload a PDF file", type="pdf")
+if uploaded_files:
+    # Step 2: Extract text from the uploaded PDFs
+    pdf_text = read_pdfs(uploaded_files)
 
-if uploaded_file is not None:
-    # Ensure the directory exists
-    temp_dir = "temp"
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
-
-    # Save the uploaded file to a temporary location
-    temp_file_path = os.path.join(temp_dir, uploaded_file.name)
-   
-    with open(temp_file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-   
-    # Step 2: Extract text from the uploaded PDF
-    pdf_text = read_pdf(temp_file_path)
-    st.session_state.uploaded_file = uploaded_file
-    st.session_state.pdf_text = pdf_text
-
-    # Step 3: Show a preview of the content of the PDF (optional)
+    # Step 3: Show a preview of the content of the PDFs (optional)
     st.text_area("PDF Content Preview", value=pdf_text[:1000], height=150)
 
-    # Step 4: Ask if the user wants to continue with the current file or upload a new one
-    continue_or_upload = st.radio("Do you want to continue or upload a new file?",
-                                 ("Continue", "Upload New File"))
+    # Step 4: Ask the user to enter a query based on the uploaded PDFs
+    query = st.text_input("Ask a question based on the content of the PDFs:")
 
-    if continue_or_upload == "Upload New File":
-        st.session_state.uploaded_file = None
-        st.session_state.pdf_text = None
-        st.experimental_rerun()  # Restart app to upload a new file
-
-    # Step 5: Ask the user to enter a query based on the uploaded PDF
-    if st.session_state.uploaded_file is not None:
-        query = st.text_input("Ask a question based on the content of the PDF:")
-
-        if query:
-            # Step 6: Get the answer from Gemini LLM with the context of the PDF
-            response = query_with_cag(st.session_state.pdf_text, query)
-            st.write("Answer:", response)
+    if query:
+        # Step 5: Get the answer from Gemini LLM with the context of the PDFs
+        response = query_with_cag(pdf_text, query)
+        st.write("Answer:", response)
