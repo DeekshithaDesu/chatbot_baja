@@ -1,8 +1,12 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Configure Gemini API
-genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ") 
+
+st.set_page_config(page_title="RoboDrive Chatbot", layout="centered")
+
+# Configure Gemini
+genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ")
+
 
 # Load preprocessed Rulebook context
 @st.cache_resource
