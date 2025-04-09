@@ -1,49 +1,95 @@
 import os
 import streamlit as st
-import google.generativeai as genai
 from PyPDF2 import PdfReader
+import google.generativeai as genai
 
-# Configure Google Gemini API key
-genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ")
+# Setup Gemini API
+genai.configure(api_key="YOUR_GEMINI_API_KEY")  # Replace with your key
 
-# Function to read multiple PDFs and extract text
+# Extract text from multiple PDFs
 def read_pdfs(files):
-    """Reads text from multiple PDF files and combines them."""
     text = ""
     for file in files:
         reader = PdfReader(file)
         for page in reader.pages:
-            text += page.extract_text() + "\n\n"  # Separate PDFs with newlines
-    return text
+            content = page.extract_text()
+            if content:
+                text += content + "\n\n"
+    return text.strip()
 
-# Function to query the Gemini LLM with preloaded context
-def query_with_cag(context: str, query: str) -> str:
-    """
-    Query the Gemini LLM with preloaded context using Cache-Augmented Generation.
-    """
-    prompt = f"Context:\n{context}\n\nQuery: {query}\nAnswer:"
+# Chunk text to avoid token overflow
+def chunk_text(text, max_words=250):
+    words = text.split()
+    return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
+
+# Use Gemini to find relevant chunks
+def get_relevant_chunks(chunks, query):
+    relevant = []
     model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text.strip()
+    for chunk in chunks:
+        prompt = f"Does this text help answer the query?\n\nText:\n{chunk}\n\nQuery:\n{query}\nAnswer Yes or No."
+        try:
+            res = model.generate_content(prompt)
+            if "yes" in res.text.lower():
+                relevant.append(chunk)
+        except:
+            continue
+    return relevant
 
-# Streamlit app interface
-st.title("RoboDrive - by Desu Deekshitha")
-st.header("Upload PDFs and Ask Your Query")
+# Final answer generator using relevant chunks
+def query_with_context(context, query):
+    prompt = f"Use the following context to answer the query:\n\n{context}\n\nQuery: {query}\nAnswer:"
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    try:
+        res = model.generate_content(prompt)
+        return res.text.strip()
+    except Exception as e:
+        return f"Error: {e}"
 
-# Step 1: Ask the user to upload multiple PDF files
-uploaded_files = st.file_uploader("Upload one or more PDFs", type="pdf", accept_multiple_files=True)
+# Streamlit App
+st.set_page_config(page_title="RoboDrive - Chat with PDF", layout="centered")
+st.title("🤖 RoboDrive - Chat with PDF")
+st.caption("Created by Desu Deekshitha 💡")
 
+# Initialize session state
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+if "pdf_text" not in st.session_state:
+    st.session_state.pdf_text = ""
+
+# Upload PDF
+uploaded_files = st.file_uploader("📄 Upload PDF(s)", type="pdf", accept_multiple_files=True)
 if uploaded_files:
-    # Step 2: Extract text from the uploaded PDFs
-    pdf_text = read_pdfs(uploaded_files)
+    st.session_state.pdf_text = read_pdfs(uploaded_files)
+    st.success("PDFs uploaded and processed successfully!")
 
-    # Step 3: Show a preview of the content of the PDFs (optional)
-    st.text_area("PDF Content Preview", value=pdf_text[:1000], height=150)
+# Chat interface
+st.subheader("💬 Ask Questions")
+query = st.chat_input("Ask something about the uploaded PDF...")
 
-    # Step 4: Ask the user to enter a query based on the uploaded PDFs
-    query = st.text_input("Ask a question based on the content of the PDFs:")
+if query:
+    # Append user message
+    st.session_state.chat_history.append({"role": "user", "message": query})
 
-    if query:
-        # Step 5: Get the answer from Gemini LLM with the context of the PDFs
-        response = query_with_cag(pdf_text, query)
-        st.write("Answer:", response)
+    with st.spinner("Thinking..."):
+        chunks = chunk_text(st.session_state.pdf_text)
+        relevant = get_relevant_chunks(chunks, query)
+
+        if not relevant:
+            response = "❌ I couldn't find relevant information in the PDF."
+        else:
+            context = "\n\n".join(relevant)
+            response = query_with_context(context, query)
+
+    # Append bot response
+    st.session_state.chat_history.append({"role": "bot", "message": response})
+
+# Display full conversation like ChatGPT
+for chat in st.session_state.chat_history:
+    if chat["role"] == "user":
+        with st.chat_message("user"):
+            st.markdown(chat["message"])
+    else:
+        with st.chat_message("assistant"):
+            st.markdown(chat["message"])
