@@ -1,0 +1,9 @@
+# run this only once to create the rulebook.txt
+from PyPDF2 import PdfReader
+
+reader = PdfReader("BAJA_SAEINDIA_RULEBOOK_2024.pdf")
+with open("rulebook.txt", "w", encoding="utf-8") as f:
+    for page in reader.pages:
+        text = page.extract_text()
+        if text:
+            f.write(text + "\n\n")
