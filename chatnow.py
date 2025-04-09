@@ -3,29 +3,37 @@ import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 
-# ✅ Streamlit Setup
+# ✅ Setup
 st.set_page_config(page_title="RoboDrive AI Chatbot", layout="centered")
 st.title("🤖 RoboDrive - aBAJA 2024 Rulebook Assistant")
 st.caption("Built by Desu Deekshitha 💡")
 
-# ✅ Gemini API Key Setup
+# ✅ Gemini Setup
 genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ")
 model = genai.GenerativeModel("gemini-pro")
 
-# ✅ Load Rulebook (must be pre-converted to rulebook.txt)
+# ✅ Load rulebook.txt
 @st.cache_resource
 def load_rulebook():
-    with open("rulebook.txt", "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open("rulebook.txt", "r", encoding="utf-8") as f:
+            return f.read()
+    except:
+        return "Rulebook not found. Please ensure rulebook.txt is in the same folder."
+
 rulebook_context = load_rulebook()
 
-# ✅ Gemini Answer from Rulebook
+# ✅ Handle greetings separately
+def is_greeting(msg):
+    return msg.lower().strip() in ["hi", "hello", "hey", "hai", "yo", "hola"]
+
+# ✅ Rulebook QA
 def ask_from_rulebook(user_input):
     prompt = f"""
 You are a BAJA SAEINDIA rulebook expert. Answer based ONLY on the following rulebook content.
 If the answer is NOT present in this document, reply: 'Not found in rulebook.'
 
-Rulebook Content:
+Rulebook:
 {rulebook_context}
 
 Question: {user_input}
@@ -36,62 +44,70 @@ Question: {user_input}
     except Exception as e:
         return f"⚠️ Gemini Error: {e}"
 
-# ✅ Web Search if not found in rulebook
+# ✅ Web Fallback
 def search_google(query):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}+site:saeindia.org"
-    res = requests.get(search_url, headers=headers)
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}+site:saeindia.org"
+        res = requests.get(search_url, headers=headers, timeout=10)
+        if res.status_code != 200:
+            return ""
+        soup = BeautifulSoup(res.text, "html.parser")
+        snippets = soup.select("div.BNeawe.s3v9rd.AP7Wnd")
+        return "\n".join([s.get_text() for s in snippets[:2]]) if snippets else ""
+    except:
+        return ""
 
-    if res.status_code != 200:
-        return "Sorry, I couldn't fetch web results."
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    snippets = soup.select("div.BNeawe.s3v9rd.AP7Wnd")
-    if snippets:
-        return "\n".join([s.get_text() for s in snippets[:3]])
-    return "Sorry, I didn't find anything useful on the web."
-
-# ✅ Streamlit Chat UI
+# ✅ Session history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-user_input = st.chat_input("Ask anything about the BAJA SAEINDIA 2024 Rulebook or event...")
+# ✅ Chat input
+user_input = st.chat_input("Ask me anything about the aBAJA Rulebook...")
 
 if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # Step 1: Try to answer from rulebook
-    rulebook_reply = ask_from_rulebook(user_input)
+    # 🔹 Step 0: Handle greetings
+    if is_greeting(user_input):
+        reply = "👋 Hello! I'm RoboDrive – your assistant for the aBAJA SAEINDIA 2024 Rulebook. Ask me anything technical, about rules, events, or eligibility!"
+    
+    # 🔹 Step 1: Skip short invalid inputs
+    elif len(user_input.strip()) <= 2:
+        reply = "🤖 Can you please ask a complete question? For example: *What are the eligibility criteria for the team?*"
 
-    if "not found" in rulebook_reply.lower():
-        # Step 2: Try web search
-        with st.spinner("Not in rulebook. Searching the web..."):
-            web_data = search_google(user_input)
+    else:
+        # 🔹 Step 2: Try rulebook
+        rulebook_reply = ask_from_rulebook(user_input)
 
-        # Step 3: Send web result to Gemini to summarize
-        final_prompt = f"""
-Here is some information from the web about the question: {user_input}
-Try to answer the question clearly based on this info:
+        if "not found" in rulebook_reply.lower():
+            with st.spinner("Not found in rulebook. Searching the web..."):
+                web_data = search_google(user_input)
+
+            if not web_data.strip():
+                reply = "❌ Sorry, I couldn't find any relevant info in the rulebook or online."
+            else:
+                web_prompt = f"""
+The user asked: {user_input}
+Using this web content, provide a helpful answer:
 
 Web Info:
 {web_data}
-
-Question: {user_input}
 """
-        try:
-            final_response = model.generate_content(final_prompt).text.strip()
-        except:
-            final_response = "Sorry, I couldn't get a good answer from the web."
-    else:
-        final_response = rulebook_reply
+                try:
+                    reply = model.generate_content(web_prompt).text.strip()
+                except:
+                    reply = "⚠️ Sorry, Gemini couldn't understand the web data."
+        else:
+            reply = rulebook_reply
 
-    st.session_state.chat_history.append({"role": "assistant", "content": final_response})
+    st.session_state.chat_history.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
-        st.markdown(final_response)
+        st.markdown(reply)
 
-# 🔁 Show chat history
+# 🔁 Chat history display
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
