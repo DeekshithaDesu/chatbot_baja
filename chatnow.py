@@ -4,7 +4,7 @@ from PyPDF2 import PdfReader
 import google.generativeai as genai
 
 # Setup Gemini API
-genai.configure(api_key="YOUR_GEMINI_API_KEY")  # Replace with your key
+genai.configure(api_key="AIzaSyB121TcLtRHJjHECYdHzG8Ze_8KzpC3BKQ")  # Replace with your key
 
 # Extract text from multiple PDFs
 def read_pdfs(files):
